@@ -1,0 +1,20 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Run a one-line script
+        run: |
+          cd /home/pi/GymPRoof 
+          git pull origin main

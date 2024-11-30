@@ -19,3 +19,7 @@ jobs:
         run: |
           cd /home/pi/GymPRoof 
           git pull origin main
+
+      - name: Restart System Services
+        run: |
+          sudo systemctl restart gym_proof.service

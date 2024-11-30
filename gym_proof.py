@@ -1,11 +1,15 @@
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 import discord
 from discord.ext import commands
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
-from utils.commands import bot_commands
-from utils.db import db_init
+from utils.commands import CommandPackage, bot_commands
+from utils.db import db_init, insert_streak, validate_streak, summarize_streak, get_users, get_balance, change_balance
+
 
 class MyBot(commands.Bot):
     def __init__(self):
@@ -15,43 +19,127 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         # Register the slash command tree
         await self.tree.sync()
-        
 
+
+scheduler = AsyncIOScheduler()
 bot = MyBot()
 
+async def send_streak_summary(interaction: discord.Interaction, user: discord.User, color: discord.Color):
+    balance = get_balance(user.name)
+    summary = summarize_streak(user.name, bot_commands.values())
+    enum_summary = f"{user.mention}\n**Balance**: {balance}\n\n"
+    
+    for command, week_streak in summary:
+        enum_summary += f"**{command}**: `{week_streak}`\n"
+
+    # Create and send the embed
+    embed = discord.Embed(
+        title="Current Week's Streak",
+        description=enum_summary,
+        color=color
+    )
+    
+    await interaction.followup.send(embed=embed)
+
+async def validate_streak_deadline(command_package: CommandPackage):
+    channel_id = int(os.environ.get('BOT_CHANNEL'))
+    channel = bot.get_channel(channel_id)
+
+    # Punish users who have not completed deadlines
+    all_users = get_users()
+    description = f"**Guess who missed their streak!**\n\n"
+    for user in all_users:
+        flag = validate_streak(user, command_package)
+
+        if flag: description += f"@{user}\n"
+
+    embed = discord.Embed(
+        title=f"❌ {command_package.command_name.capitalize()} Deadline",
+        description=description,
+        color=discord.Color.blurple(),
+    )
+    embed.set_footer(text="Remember to check your new balance")
+
+    await channel.send(embed=embed)
+
 # Shared helper function for processing image commands
-async def process_image_helper(interaction: discord.Interaction, file: discord.Attachment, command_name: str, color: discord.Color):
+async def process_image_helper(interaction: discord.Interaction, file: discord.Attachment, command_package: CommandPackage):
     if not file.content_type.startswith("image/"):
         await interaction.response.send_message(
             "R u dumb? Upload an image...", ephemeral=True
         )
         return
+    
+    user = interaction.user
+    command_name = command_package.command_name
+    color = command_package.get_criteria("color")
+    local_datetime = datetime.now().strftime('%A, %B %d, %Y')
+
+    insert_streak(user.name, command_package)
 
     try:
         # Defer the response to allow processing
         await interaction.response.defer()
 
-        # Create a common embed
+        # Send the embed with the image preview
         embed = discord.Embed(
-            title=f"{command_name.capitalize()} Proof",
-            description=f"**File**: `{file.filename}`\n"
-                        f"**Size**: `{file.size / 1024:.2f} KB`\n",
+            title=f"✅ {command_name.capitalize()} Proof",
+            description=f"**Date**: {local_datetime}",
             color=color
         )
         embed.set_image(url=file.url)
 
-        # Send the embed with the image preview
         await interaction.followup.send(embed=embed)
+
+        # Send streak summary (reusing the helper function)
+        await send_streak_summary(interaction, user, color)
 
     except Exception as e:
         await interaction.followup.send(f"An error occurred while processing the `{command_name}` command: {e}", ephemeral=True)
 
-# Dynamically register slash commands
+# Dynamically register slash commands using factory
 for command_name, command_package in bot_commands.items():
-    @bot.tree.command(name=command_name, description=command_package.get_criteria("description"))
-    async def command_handler(interaction: discord.Interaction, file: discord.Attachment):
-        # All bot commands require an image upload...
-        await process_image_helper(interaction, file, command_name, command_package.get_criteria("color"))
+
+    def create_command_handler(command_name, command_package):
+        @bot.tree.command(name=command_name, description=command_package.get_criteria("description"))
+        async def command_handler(interaction: discord.Interaction, file: discord.Attachment):
+            # All bot commands require an image upload...
+            await process_image_helper(interaction, file, command_package)
+
+        return command_handler
+
+    create_command_handler(command_name, command_package)
+
+@bot.event
+async def on_ready():
+    for _, command_package in bot_commands.items():
+        deadline = command_package.get_criteria("deadline")
+        cron_trigger = CronTrigger(**deadline)
+
+        # Add job to the scheduler
+        scheduler.add_job(
+            validate_streak_deadline,
+            cron_trigger,
+            args=[command_package],
+        )
+    
+    scheduler.start()
+
+@bot.tree.command(name="streak", description="Shows your current streak")
+async def streak_command(interaction: discord.Interaction):
+    user = interaction.user
+    color = discord.Color.teal()
+
+    await interaction.response.defer()
+    
+    # Send the streak summary for the user
+    await send_streak_summary(interaction, user, color)
+
+@bot.tree.command(name="balance", description="Change balance")
+async def balance_command(interaction: discord.Interaction, user: discord.Member, balance: int):
+    change_balance(user.name, balance)
+
+    await interaction.response.send_message(f"Balance has been updated!.", ephemeral=True)
 
 @bot.tree.command(name="help", description="Displays all available commands")
 async def help_command(interaction: discord.Interaction):
@@ -60,12 +148,15 @@ async def help_command(interaction: discord.Interaction):
         color=discord.Color.yellow()
     )
     
-    for command, command_package in enumerate(bot_commands):
+    for command, command_package in bot_commands.items():
         embed.add_field(
             name=f"/{command}",
             value=command_package.get_criteria("description"),
             inline=False
         )
+
+    embed.add_field(name=f"/help", value="Displays all available commands", inline=False)
+    embed.add_field(name=f"/streak", value="Shows your current streak", inline=False)
     
     # Footer and additional details
     embed.set_footer(text="Use '/' to start typing a command!")

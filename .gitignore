@@ -163,3 +163,4 @@ cython_debug/
 
 app.db
 .DS_Store
+test.py

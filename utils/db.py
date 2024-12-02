@@ -70,15 +70,11 @@ def summarize_streak(user_name, command_packages):
     cursor = connection.cursor()
 
     commands = [command_package.command_name for command_package in command_packages]
+    unions = "SELECT ? UNION ALL " * (len(commands) - 1) + "SELECT ?"
 
     # dont even ask lol...
     cursor.execute(f'''
-        WITH routine_types(routine_type) AS (
-            SELECT ? UNION ALL
-            SELECT ? UNION ALL
-            SELECT ? UNION ALL
-            SELECT ?
-        )
+        WITH routine_types(routine_type) AS ({unions})
         SELECT rt.routine_type,
             COALESCE(COUNT(DISTINCT DATE(s.date_time)), 0) AS unique_days_count
         FROM routine_types rt
@@ -87,7 +83,7 @@ def summarize_streak(user_name, command_packages):
         AND s.user_name = ?
         AND DATE(s.date_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', 'localtime')
         GROUP BY rt.routine_type;
-    ''', commands + ['notnotkendrick'])
+    ''', commands + [user_name])
 
     records = cursor.fetchall()
 

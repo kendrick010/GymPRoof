@@ -111,4 +111,22 @@ bot_commands = {
         """)
         .command_package
     ,
+    "screentime":
+        CommandPackageBuilder("screentime")
+        .add_description("Upload image/screenshot of your <=3 hours screentime")
+        .add_color(discord.Color.orange())
+        .add_punishment(-10.0)
+        .add_deadline({"hour": 23, "minute": 59})
+        .add_validator(lambda user: f"""
+            SELECT CASE 
+                WHEN COUNT(*) > 0 THEN 1 
+                ELSE 0 
+            END
+            FROM streaks
+            WHERE DATE(date_time) = DATE('now', 'localtime') 
+            AND routine_type = 'screentime'
+            AND user_name = '{user}';
+        """)
+        .command_package
+    ,
 }

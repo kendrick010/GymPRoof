@@ -125,14 +125,13 @@ async def on_ready():
     
     scheduler.start()
 
-@bot.tree.command(name="streak", description="Shows your current streak")
-async def streak_command(interaction: discord.Interaction):
-    user = interaction.user
-    color = discord.Color.teal()
-
+@bot.tree.command(name="streak", description="Shows current streak")
+async def streak_command(interaction: discord.Interaction, user: discord.Member):
     await interaction.response.defer()
     
     # Send the streak summary for the user
+    color = discord.Color.teal()
+
     await send_streak_summary(interaction, user, color)
 
 @bot.tree.command(name="balance", description="Change balance")
@@ -156,7 +155,7 @@ async def help_command(interaction: discord.Interaction):
         )
 
     embed.add_field(name=f"/help", value="Displays all available commands", inline=False)
-    embed.add_field(name=f"/streak", value="Shows your current streak", inline=False)
+    embed.add_field(name=f"/streak", value="Shows current streak", inline=False)
     
     # Footer and additional details
     embed.set_footer(text="Use '/' to start typing a command!")

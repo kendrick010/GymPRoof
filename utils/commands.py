@@ -51,7 +51,7 @@ bot_commands = {
                 ELSE 0
             END
             FROM streaks
-            WHERE DATE(date_time) BETWEEN DATE('now', 'weekday 1', '-7 days') AND DATE('now', 'localtime')
+            WHERE DATE(date_time) BETWEEN DATE('now', 'weekday 1') AND DATE('now', 'localtime')
             AND routine_type = 'gym'
             AND user_name = '{user}';
         """)

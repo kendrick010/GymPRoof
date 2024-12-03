@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 SQLITE_DB = "app.db"
 
@@ -72,6 +72,13 @@ def summarize_streak(user_name, command_packages):
     commands = [command_package.command_name for command_package in command_packages]
     unions = "SELECT ? UNION ALL " * (len(commands) - 1)
 
+    today_datetime = datetime.now()
+    monday_datetime = today_datetime - timedelta(days=today_datetime.weekday())
+    monday_datetime = monday_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    today_datetime = today_datetime.strftime('%Y-%m-%d %H:%M:%S')
+    monday_datetime = monday_datetime.strftime('%Y-%m-%d %H:%M:%S')
+
     # dont even ask lol...
     cursor.execute(f'''
         WITH routine_types(routine_type) AS ({unions + "SELECT ?"})
@@ -81,9 +88,9 @@ def summarize_streak(user_name, command_packages):
         LEFT JOIN streaks s
         ON rt.routine_type = s.routine_type
         AND s.user_name = ?
-        AND DATE(s.date_time) BETWEEN DATE('now', 'weekday 1') AND DATE('now', 'localtime')
+        AND DATE(s.date_time) BETWEEN ? AND ?
         GROUP BY rt.routine_type;
-    ''', commands + [user_name])
+    ''', commands + [user_name, monday_datetime, today_datetime])
 
     records = cursor.fetchall()
 

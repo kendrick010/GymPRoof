@@ -47,11 +47,11 @@ bot_commands = {
         .add_deadline({"hour": 23, "minute": 59})
         .add_validator(lambda user: f"""
             SELECT CASE
-                WHEN (COUNT(DISTINCT DATE(date_time)) + strftime('%w', 'now')) > 5 THEN 1
+                WHEN (COUNT(DISTINCT DATE(date_time)) + 7 - strftime('%w', 'now')) >= 5 THEN 1
                 ELSE 0
             END
             FROM streaks
-            WHERE DATE(date_time) BETWEEN DATE('now', 'weekday 1') AND DATE('now', 'localtime')
+            WHERE strftime('%Y-%W', date_time) = strftime('%Y-%W', 'now')
             AND routine_type = 'gym'
             AND user_name = '{user}';
         """)

@@ -65,32 +65,18 @@ def validate_streak(user_name, command_package):
 
     return punished
 
-def summarize_streak(user_name, command_packages):
+def summarize_streak(user_name):
     connection = sqlite3.connect(SQLITE_DB)
     cursor = connection.cursor()
 
-    commands = [command_package.command_name for command_package in command_packages]
-    unions = "SELECT ? UNION ALL " * (len(commands) - 1)
-
-    today_datetime = datetime.now()
-    monday_datetime = today_datetime - timedelta(days=today_datetime.weekday())
-    monday_datetime = monday_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
-
-    today_datetime = today_datetime.strftime('%Y-%m-%d %H:%M:%S')
-    monday_datetime = monday_datetime.strftime('%Y-%m-%d %H:%M:%S')
-
     # dont even ask lol...
     cursor.execute(f'''
-        WITH routine_types(routine_type) AS ({unions + "SELECT ?"})
-        SELECT rt.routine_type,
-            COALESCE(COUNT(DISTINCT DATE(s.date_time)), 0) AS unique_days_count
-        FROM routine_types rt
-        LEFT JOIN streaks s
-        ON rt.routine_type = s.routine_type
-        AND s.user_name = ?
-        AND DATE(s.date_time) BETWEEN ? AND ?
-        GROUP BY rt.routine_type;
-    ''', commands + [user_name, monday_datetime, today_datetime])
+        SELECT routine_type, COUNT(DISTINCT DATE(date_time)) AS unique_date_count
+        FROM streaks
+        WHERE strftime('%Y-%W', date_time) = strftime('%Y-%W', 'now')
+        AND user_name = ?
+        GROUP BY routine_type
+    ''', (user_name,))
 
     records = cursor.fetchall()
 

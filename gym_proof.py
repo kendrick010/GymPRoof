@@ -26,7 +26,7 @@ bot = MyBot()
 
 async def send_streak_summary(interaction: discord.Interaction, user: discord.User, color: discord.Color):
     balance = get_balance(user.name)
-    summary = summarize_streak(user.name, bot_commands.values())
+    summary = summarize_streak(user.name)
     enum_summary = f"{user.mention}\n**Balance**: {balance}\n\n"
     
     for command, week_streak in summary:

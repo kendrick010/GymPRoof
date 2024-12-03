@@ -29,8 +29,14 @@ async def send_streak_summary(interaction: discord.Interaction, user: discord.Us
     summary = summarize_streak(user.name)
     enum_summary = f"{user.mention}\n**Balance**: {balance}\n\n"
     
+    started, routines = set(), set(bot_commands.keys())
     for command, week_streak in summary:
         enum_summary += f"**{command}**: `{week_streak}`\n"
+        started.add(command)
+
+    routines = routines.difference(started)
+    for routine in routines:
+        enum_summary += f"**{routine}**: `0`\n"
 
     # Create and send the embed
     embed = discord.Embed(

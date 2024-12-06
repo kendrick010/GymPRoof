@@ -73,7 +73,7 @@ def summarize_streak(user_name):
     cursor.execute(f'''
         SELECT routine_type, COUNT(DISTINCT DATE(date_time)) AS unique_date_count
         FROM streaks
-        WHERE strftime('%Y-%W', date_time) = strftime('%Y-%W', 'now')
+        WHERE strftime('%Y-%W', date_time) = strftime('%Y-%W', 'now', 'localtime')
         AND user_name = ?
         GROUP BY routine_type
     ''', (user_name,))

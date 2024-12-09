@@ -38,6 +38,14 @@ class CommandPackageBuilder:
         return self
     
 
+current_week_filter = """
+    WITH week_dates AS (
+    SELECT
+        date('now', '-' || ((strftime('%w', 'now', 'localtime') + 6) % 7) || ' days') AS week_start,
+        date('now', '+' || (6 - (strftime('%w', 'now', 'localtime') + 6) % 7) || ' days') AS week_end
+    )
+"""
+
 bot_commands = {
     "gym":
         CommandPackageBuilder("gym")
@@ -46,12 +54,13 @@ bot_commands = {
         .add_punishment(-10.0)
         .add_deadline({"hour": 23, "minute": 59})
         .add_validator(lambda user: f"""
+            {current_week_filter}
             SELECT CASE
                 WHEN (COUNT(DISTINCT DATE(date_time)) + 7 - strftime('%w', 'now', 'localtime')) >= 5 THEN 1
                 ELSE 0
             END
             FROM streaks
-            WHERE strftime('%Y-%W', date_time) = strftime('%Y-%W', 'now', 'localtime')
+            WHERE date_time BETWEEN (SELECT week_start FROM week_dates) AND (SELECT week_end FROM week_dates)
             AND routine_type = 'gym'
             AND user_name = '{user}';
         """)
@@ -64,12 +73,13 @@ bot_commands = {
         .add_punishment(-15.0)
         .add_deadline({"day_of_week": "sun", "hour": 23, "minute": 59})
         .add_validator(lambda user: f"""
+            {current_week_filter}
             SELECT CASE 
                 WHEN COUNT(*) > 0 THEN 1 
                 ELSE 0 
             END
             FROM streaks
-            WHERE strftime('%Y-%W', date_time) = strftime('%Y-%W', 'now', 'localtime') 
+            WHERE date_time BETWEEN (SELECT week_start FROM week_dates) AND (SELECT week_end FROM week_dates)
             AND routine_type = 'socials'
             AND user_name = '{user}';
         """)

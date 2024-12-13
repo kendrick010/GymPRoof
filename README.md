@@ -6,7 +6,7 @@ Discord bot gym (and routine) gamified tracker
 
 My friend proposed a deal where he must send me pictures/selfies of himself at the gym or completing his daily routines; if he failed to do so, he would lose money. On my stakes, I was responsible for enforcing and reminding him of these rules, and if I didn’t, I would also lose money.
 
-Engineers a very lazy, so I made a Discord bot that automates my bid of the deal while I make passive income lol.
+Engineers are very lazy, so I made a Discord bot that automates my bid of the deal while I make passive income lol.
 
 ## Discord Bot
 

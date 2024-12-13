@@ -8,7 +8,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from utils.commands import CommandPackage, bot_commands
-from utils.db import db_init, insert_streak, validate_streak, summarize_streak, get_users, get_balance, change_balance
+from utils.db import (db_init, 
+                      add_streak, 
+                      summarize_streak, 
+                      punish_user,
+                      get_users, 
+                      get_balance, 
+                      change_balance)
 
 
 class MyBot(commands.Bot):
@@ -25,8 +31,8 @@ scheduler = AsyncIOScheduler()
 bot = MyBot()
 
 async def send_streak_summary(interaction: discord.Interaction, user: discord.User, color: discord.Color):
-    balance = get_balance(user.name)
-    summary = summarize_streak(user.name)
+    balance = get_balance(user_name=user.name)
+    summary = summarize_streak(user_name=user.name)
     enum_summary = f"{user.mention}\n**Balance**: {balance}\n\n"
     
     started, routines = set(), set(bot_commands.keys())
@@ -55,7 +61,7 @@ async def validate_streak_deadline(command_package: CommandPackage):
     all_users = get_users()
     description = f"**Guess who missed their streak!**\n\n"
     for user in all_users:
-        flag = validate_streak(user, command_package)
+        flag = punish_user(user_name=user, command_package=command_package)
 
         if flag: description += f"@{user}\n"
 
@@ -78,10 +84,10 @@ async def process_image_helper(interaction: discord.Interaction, file: discord.A
     
     user = interaction.user
     command_name = command_package.command_name
-    color = command_package.get_criteria("color")
+    color = command_package.get_member("color")
     local_datetime = datetime.now().strftime('%A, %B %d, %Y')
 
-    insert_streak(user.name, command_package)
+    add_streak(user_name=user.name, command_package=command_package)
 
     try:
         # Defer the response to allow processing
@@ -107,7 +113,7 @@ async def process_image_helper(interaction: discord.Interaction, file: discord.A
 for command_name, command_package in bot_commands.items():
 
     def create_command_handler(command_name, command_package):
-        @bot.tree.command(name=command_name, description=command_package.get_criteria("description"))
+        @bot.tree.command(name=command_name, description=command_package.get_member("description"))
         async def command_handler(interaction: discord.Interaction, file: discord.Attachment):
             # All bot commands require an image upload...
             await process_image_helper(interaction, file, command_package)
@@ -119,7 +125,7 @@ for command_name, command_package in bot_commands.items():
 @bot.event
 async def on_ready():
     for _, command_package in bot_commands.items():
-        deadline = command_package.get_criteria("deadline")
+        deadline = command_package.get_member("deadline")
         cron_trigger = CronTrigger(**deadline)
 
         # Add job to the scheduler
@@ -142,7 +148,7 @@ async def streak_command(interaction: discord.Interaction, user: discord.Member)
 
 @bot.tree.command(name="balance", description="Change balance")
 async def balance_command(interaction: discord.Interaction, user: discord.Member, balance: int):
-    change_balance(user.name, balance)
+    change_balance(user_name=user.name, new_balance=balance)
 
     await interaction.response.send_message(f"Balance has been updated!.", ephemeral=True)
 
@@ -156,7 +162,7 @@ async def help_command(interaction: discord.Interaction):
     for command, command_package in bot_commands.items():
         embed.add_field(
             name=f"/{command}",
-            value=command_package.get_criteria("description"),
+            value=command_package.get_member("description"),
             inline=False
         )
 

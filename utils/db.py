@@ -1,12 +1,28 @@
+from functools import wraps
 import sqlite3
-from datetime import datetime, timedelta
 
 SQLITE_DB = "app.db"
 
-def db_init():
-    connection = sqlite3.connect(SQLITE_DB)
-    cursor = connection.cursor()
+def db_connection(func):
+    # Database connection decorator
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        connection = sqlite3.connect(SQLITE_DB)
+        cursor = connection.cursor()
 
+        try:
+            result = func(cursor, *args, **kwargs)
+            connection.commit()
+
+        finally:
+            connection.close()
+
+        return result
+    
+    return wrapper
+
+@db_connection
+def db_init(cursor):
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS streaks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,53 +39,17 @@ def db_init():
         )
     ''')
 
-    connection.commit()
-    connection.close()
-
-def insert_streak(user_name, command_package):
-    connection = sqlite3.connect(SQLITE_DB)
-    cursor = connection.cursor()
-
+@db_connection
+def add_streak(cursor, user_name, command_package):
     routine_type = command_package.command_name
-    local_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
     cursor.execute('''
         INSERT INTO streaks (user_name, routine_type, date_time)
-        VALUES (?, ?, ?)
-    ''', (user_name, routine_type, local_datetime))
+        VALUES (?, ?, DATETIME('now', 'localtime'))
+    ''', (user_name, routine_type))
 
-    connection.commit()
-    connection.close()
-
-def validate_streak(user_name, command_package):
-    connection = sqlite3.connect(SQLITE_DB)
-    cursor = connection.cursor()
-
-    punished = False
-    punishment = command_package.get_criteria("punishment")
-    query = command_package.get_criteria("validator")
-    query = query(user_name)
-
-    cursor.execute(query)
-    records = cursor.fetchone()[0]
-
-    if not records:
-        punished = True
-        cursor.execute('''
-            INSERT OR REPLACE INTO balance (user_name, balance)
-            VALUES (?, COALESCE((SELECT balance FROM balance WHERE user_name = ?), 0.0) + ?);
-        ''', (user_name, user_name, punishment))
-
-    connection.commit()
-    connection.close()
-
-    return punished
-
-def summarize_streak(user_name):
-    connection = sqlite3.connect(SQLITE_DB)
-    cursor = connection.cursor()
-
-    # dont even ask lol...
+@db_connection
+def summarize_streak(cursor, user_name):
     cursor.execute(f'''
         SELECT routine_type, COUNT(DISTINCT DATE(date_time)) AS unique_date_count
         FROM streaks
@@ -78,60 +58,54 @@ def summarize_streak(user_name):
         GROUP BY routine_type
     ''', (user_name,))
 
-    records = cursor.fetchall()
+    return cursor.fetchall()
 
-    connection.commit()
-    connection.close()
+@db_connection
+def punish_user(cursor, user_name, command_package):
+    punishment_amount = command_package.get_member("punishment")
+    punishment_validator = command_package.get_member("validator")
+    query = punishment_validator(user_name)
 
-    return records
+    cursor.execute(query)
+    records = cursor.fetchone()[0]
 
-def get_users():
-    connection = sqlite3.connect(SQLITE_DB)
-    cursor = connection.cursor()
+    if not records:
+        cursor.execute('''
+            INSERT OR REPLACE INTO balance (user_name, balance)
+            VALUES (?, COALESCE((SELECT balance FROM balance WHERE user_name = ?), 0.0) + ?);
+        ''', (user_name, user_name, punishment_amount))
 
-    cursor.execute("SELECT DISTINCT user_name FROM balance")
-    users = cursor.fetchall()
-    users = [user[0] for user in users]
+        return True
 
-    connection.commit()
-    connection.close()
+    return False
+
+@db_connection
+def get_users(cursor):
+    cursor.execute('''
+        SELECT DISTINCT user_name FROM balance
+    ''')
+
+    users = [user[0] for user in cursor.fetchall()]
     
     return users
 
-def get_balance(user_name):
-    connection = sqlite3.connect(SQLITE_DB)
-    cursor = connection.cursor()
-
-    cursor.execute(f'''
-        SELECT balance
-        FROM balance
-        WHERE user_name = ?;
+@db_connection
+def get_balance(cursor, user_name):
+    cursor.execute('''
+        INSERT OR IGNORE INTO balance (user_name) VALUES (?);
     ''', (user_name,))
 
-    balance = cursor.fetchone()
-    
-    if not balance:
-        balance = 0.0
-        cursor.execute('''
-            INSERT INTO balance (user_name, balance)
-            VALUES (?, ?);
-        ''', (user_name, 0.0))
-    else:
-        balance = balance[0]
+    cursor.execute('''
+        SELECT balance FROM balance WHERE user_name = ?;
+    ''', (user_name,))
 
-    connection.commit()
-    connection.close()
+    user_balance = cursor.fetchone()[0]
 
-    return balance
+    return user_balance
 
-def change_balance(user_name, new_balance):
-    connection = sqlite3.connect(SQLITE_DB)
-    cursor = connection.cursor()
-
+@db_connection
+def change_balance(cursor, user_name, new_balance):
     cursor.execute('''
         INSERT OR REPLACE INTO balance (user_name, balance)
         VALUES (?, ?);
     ''', (user_name, new_balance))
-
-    connection.commit()
-    connection.close()

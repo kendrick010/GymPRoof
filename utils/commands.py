@@ -6,11 +6,11 @@ class CommandPackage:
         self.command_name = command_name
         self.meta = {}
 
-    def add_criteria(self, criteria, criteria_value):
-        self.meta[criteria] = criteria_value
+    def add_member(self, member_name, member_value):
+        self.meta[member_name] = member_value
 
-    def get_criteria(self, criteria):
-        return self.meta.get(criteria)
+    def get_member(self, member_name):
+        return self.meta.get(member_name)
 
 
 class CommandPackageBuilder:
@@ -18,23 +18,23 @@ class CommandPackageBuilder:
         self.command_package = CommandPackage(command_name)
 
     def add_description(self, description):
-        self.command_package.add_criteria("description", description)
+        self.command_package.add_member("description", description)
         return self
 
     def add_color(self, color):
-        self.command_package.add_criteria("color", color)
+        self.command_package.add_member("color", color)
         return self
 
     def add_punishment(self, punishment):
-        self.command_package.add_criteria("punishment", punishment)
+        self.command_package.add_member("punishment", punishment)
         return self
     
     def add_deadline(self, deadline):
-        self.command_package.add_criteria("deadline", deadline)
+        self.command_package.add_member("deadline", deadline)
         return self
     
     def add_validator(self, validator):
-        self.command_package.add_criteria("validator", validator)
+        self.command_package.add_member("validator", validator)
         return self
     
 

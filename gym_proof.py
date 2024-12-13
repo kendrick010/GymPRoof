@@ -17,7 +17,7 @@ from utils.db import (db_init,
                       change_balance)
 
 
-class MyBot(commands.Bot):
+class DiscordBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         super().__init__(command_prefix="!", intents=intents)
@@ -28,7 +28,7 @@ class MyBot(commands.Bot):
 
 
 scheduler = AsyncIOScheduler()
-bot = MyBot()
+bot = DiscordBot()
 
 async def send_streak_summary(interaction: discord.Interaction, user: discord.User, color: discord.Color):
     balance = get_balance(user_name=user.name)
@@ -74,8 +74,8 @@ async def validate_streak_deadline(command_package: CommandPackage):
 
     await channel.send(embed=embed)
 
-# Shared helper function for processing image commands
-async def process_image_helper(interaction: discord.Interaction, file: discord.Attachment, command_package: CommandPackage):
+# Shared handler for processing route commands
+async def routine_command(interaction: discord.Interaction, file: discord.Attachment, command_package: CommandPackage):
     if not file.content_type.startswith("image/"):
         await interaction.response.send_message(
             "R u dumb? Upload an image...", ephemeral=True
@@ -109,18 +109,17 @@ async def process_image_helper(interaction: discord.Interaction, file: discord.A
     except Exception as e:
         await interaction.followup.send(f"An error occurred while processing the `{command_name}` command: {e}", ephemeral=True)
 
+def create_route_command_handler(command_name, command_package):
+    @bot.tree.command(name=command_name, description=command_package.get_member("description"))
+    async def command_handler(interaction: discord.Interaction, file: discord.Attachment):
+        # All bot commands require an image upload...
+        await routine_command(interaction, file, command_package)
+
+    return command_handler
+    
 # Dynamically register slash commands using factory
 for command_name, command_package in bot_commands.items():
-
-    def create_command_handler(command_name, command_package):
-        @bot.tree.command(name=command_name, description=command_package.get_member("description"))
-        async def command_handler(interaction: discord.Interaction, file: discord.Attachment):
-            # All bot commands require an image upload...
-            await process_image_helper(interaction, file, command_package)
-
-        return command_handler
-
-    create_command_handler(command_name, command_package)
+    create_route_command_handler(command_name, command_package)
 
 @bot.event
 async def on_ready():

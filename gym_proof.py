@@ -2,47 +2,50 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 
-import discord
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from utils.commands import CommandPackage, bot_commands
-from utils.db import (db_init, 
-                      add_streak, 
-                      summarize_streak, 
-                      punish_user,
-                      get_users, 
-                      get_balance, 
-                      change_balance)
+from utils.commands import *
+from utils.db import *
 
 
 class DiscordBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
+        intents.reactions = True
+        intents.messages = True
+
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
         # Register the slash command tree
         await self.tree.sync()
 
+load_dotenv()
+
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
+SERVER_ID = int(os.environ.get('SERVER_ID'))
+RULES_CHANNEL = int(os.environ.get('RULES_CHANNEL'))
+BOT_CHANNEL = int(os.environ.get('BOT_CHANNEL'))
+RULES_MESSAGE_ID = int(os.environ.get('RULES_MESSAGE_ID'))
 
 scheduler = AsyncIOScheduler()
 bot = DiscordBot()
 
-async def send_streak_summary(interaction: discord.Interaction, user: discord.User, color: discord.Color):
-    balance = get_balance(user_name=user.name)
-    summary = summarize_streak(user_name=user.name)
-    enum_summary = f"{user.mention}\n**Balance**: {balance}\n\n"
-    
-    started, routines = set(), set(bot_commands.keys())
-    for command, week_streak in summary:
-        enum_summary += f"**{command}**: `{week_streak}`\n"
-        started.add(command)
+async def streak_summary_command(interaction: discord.Interaction, user: discord.User, color: discord.Color):
+    user_id = str(user.id)
 
-    routines = routines.difference(started)
-    for routine in routines:
-        enum_summary += f"**{routine}**: `0`\n"
+    balance = get_balance(user_id=user_id)
+    streak_summary = summarize_streak(user_id=user_id)
+    streak_summary = {routine: streak_count for routine, streak_count in streak_summary}
+    opted_routines = get_opted_routines(user_id=user_id)
+
+    enum_summary = f"{user.mention}\n**Balance**: {balance}\n\n"
+
+    for routine in opted_routines:
+        streak_count = streak_summary.get(routine, 0)
+        enum_summary += f"**{routine}**: `{streak_count}`\n"
 
     # Create and send the embed
     embed = discord.Embed(
@@ -54,23 +57,25 @@ async def send_streak_summary(interaction: discord.Interaction, user: discord.Us
     await interaction.followup.send(embed=embed)
 
 async def validate_streak_deadline(command_package: CommandPackage):
-    channel_id = int(os.environ.get('BOT_CHANNEL'))
-    channel = bot.get_channel(channel_id)
+    channel = bot.get_channel(RULES_MESSAGE_ID)
 
-    # Punish users who have not completed deadlines
-    all_users = get_users()
-    description = f"**Guess who missed their streak!**\n\n"
-    for user in all_users:
-        flag = punish_user(user_name=user, command_package=command_package)
+    # Punish users who have not completed routine deadline
+    opted_users = get_opted_users(command_package=command_package)
+    description = f"**Guess who missed their streak**\n\n"
 
-        if flag: description += f"@{user}\n"
+    if not opted_users: return
+    
+    for user_id in opted_users:
+        flag = punish_user(user_id=user_id, command_package=command_package)
+
+        if flag: description += f"<@{user_id}>\n"
 
     embed = discord.Embed(
-        title=f"❌ {command_package.command_name.capitalize()} Deadline",
+        title=f"\U0000274C {command_package.command_name.capitalize()} Deadline",
         description=description,
         color=discord.Color.blurple(),
     )
-    embed.set_footer(text="Remember to check your new balance")
+    embed.set_footer(text="Remember to check your new balance!")
 
     await channel.send(embed=embed)
 
@@ -83,11 +88,12 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
         return
     
     user = interaction.user
+
     command_name = command_package.command_name
     color = command_package.get_member("color")
     local_datetime = datetime.now().strftime('%A, %B %d, %Y')
 
-    add_streak(user_name=user.name, command_package=command_package)
+    add_streak(user_id=user.id, command_package=command_package)
 
     try:
         # Defer the response to allow processing
@@ -95,7 +101,7 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
 
         # Send the embed with the image preview
         embed = discord.Embed(
-            title=f"✅ {command_name.capitalize()} Proof",
+            title=f"\U00002705 {command_name.capitalize()} Proof",
             description=f"**Date**: {local_datetime}",
             color=color
         )
@@ -104,12 +110,22 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
         await interaction.followup.send(embed=embed)
 
         # Send streak summary (reusing the helper function)
-        await send_streak_summary(interaction, user, color)
+        await streak_summary_command(interaction, user, color)
 
     except Exception as e:
         await interaction.followup.send(f"An error occurred while processing the `{command_name}` command: {e}", ephemeral=True)
 
-def create_route_command_handler(command_name, command_package):
+async def routine_opt(payload: discord.RawReactionActionEvent, updater: Callable[[str, str], None]):
+    if payload.channel_id != RULES_CHANNEL or payload.message_id != RULES_MESSAGE_ID:
+        return
+
+    emoji = str(payload.emoji)
+    user_id = payload.user_id
+    command_package = emoji_command_lookup.get(emoji)
+
+    updater(user_id=user_id, command_package=command_package)
+
+def create_route_command_handler(command_name: str, command_package: CommandPackage):
     @bot.tree.command(name=command_name, description=command_package.get_member("description"))
     async def command_handler(interaction: discord.Interaction, file: discord.Attachment):
         # All bot commands require an image upload...
@@ -121,21 +137,6 @@ def create_route_command_handler(command_name, command_package):
 for command_name, command_package in bot_commands.items():
     create_route_command_handler(command_name, command_package)
 
-@bot.event
-async def on_ready():
-    for _, command_package in bot_commands.items():
-        deadline = command_package.get_member("deadline")
-        cron_trigger = CronTrigger(**deadline)
-
-        # Add job to the scheduler
-        scheduler.add_job(
-            validate_streak_deadline,
-            cron_trigger,
-            args=[command_package],
-        )
-    
-    scheduler.start()
-
 @bot.tree.command(name="streak", description="Shows current streak")
 async def streak_command(interaction: discord.Interaction, user: discord.Member):
     await interaction.response.defer()
@@ -143,11 +144,11 @@ async def streak_command(interaction: discord.Interaction, user: discord.Member)
     # Send the streak summary for the user
     color = discord.Color.teal()
 
-    await send_streak_summary(interaction, user, color)
+    await streak_summary_command(interaction, user, color)
 
 @bot.tree.command(name="balance", description="Change balance")
-async def balance_command(interaction: discord.Interaction, user: discord.Member, balance: int):
-    change_balance(user_name=user.name, new_balance=balance)
+async def balance_command(interaction: discord.Interaction, user: discord.Member, balance: float):
+    update_balance(user_id=user.id, new_balance=balance)
 
     await interaction.response.send_message(f"Balance has been updated!.", ephemeral=True)
 
@@ -174,7 +175,41 @@ async def help_command(interaction: discord.Interaction):
     # Send the embed
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@bot.event
+async def on_ready():
+    # Suscribe routine deadline to schedular
+    for command_package in bot_commands.values():
+        deadline = command_package.get_member("deadline")
+
+        if deadline:
+            cron_trigger = CronTrigger(**deadline)
+
+            # Add job to the scheduler
+            scheduler.add_job(
+                validate_streak_deadline,
+                cron_trigger,
+                args=[command_package],
+            )
+    
+    scheduler.start()
+
+    # Register new users to database
+    guild = discord.utils.get(bot.guilds, id=SERVER_ID)
+    members = await guild.fetch_members(limit=None).flatten()
+
+    for member in members:
+        if not member.bot:
+            member_id = str(member.id)
+            add_user(member_id)
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    await routine_opt(payload=payload, updater=update_opted_routine)
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    await routine_opt(payload=payload, updater=drop_opted_routine)
+
 # Run the bot
-load_dotenv()
 db_init()
-bot.run(os.environ.get('BOT_TOKEN'))
+bot.run(BOT_TOKEN)

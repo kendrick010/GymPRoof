@@ -1,39 +1,43 @@
+from typing import Callable
 import discord
 
-
 class CommandPackage:
-    def __init__(self, command_name):
+    def __init__(self, command_name: str):
         self.command_name = command_name
         self.meta = {}
 
-    def add_member(self, member_name, member_value):
+    def add_member(self, member_name: str, member_value):
         self.meta[member_name] = member_value
 
-    def get_member(self, member_name):
+    def get_member(self, member_name: str):
         return self.meta.get(member_name)
 
 
 class CommandPackageBuilder:
-    def __init__(self, command_name):
+    def __init__(self, command_name: str):
         self.command_package = CommandPackage(command_name)
 
-    def add_description(self, description):
+    def add_description(self, description: str):
         self.command_package.add_member("description", description)
         return self
 
-    def add_color(self, color):
+    def add_color(self, color: discord.Color):
         self.command_package.add_member("color", color)
         return self
+    
+    def add_emoji(self, emoji: str):
+        self.command_package.add_member("emoji", emoji)
+        return self
 
-    def add_punishment(self, punishment):
+    def add_punishment(self, punishment: float):
         self.command_package.add_member("punishment", punishment)
         return self
     
-    def add_deadline(self, deadline):
+    def add_deadline(self, deadline: dict):
         self.command_package.add_member("deadline", deadline)
         return self
     
-    def add_validator(self, validator):
+    def add_validator(self, validator: Callable[[str], str]):
         self.command_package.add_member("validator", validator)
         return self
     
@@ -51,6 +55,7 @@ bot_commands = {
         CommandPackageBuilder("gym")
         .add_description("Upload gym proof image/selfie")
         .add_color(discord.Color.green())
+        .add_emoji("\U0001F4AA")
         .add_punishment(-10.0)
         .add_deadline({"hour": 23, "minute": 59})
         .add_validator(lambda user: f"""
@@ -62,7 +67,7 @@ bot_commands = {
             FROM streaks
             WHERE date_time BETWEEN (SELECT week_start FROM week_dates) AND (SELECT week_end FROM week_dates)
             AND routine_type = 'gym'
-            AND user_name = '{user}';
+            AND user_id = '{user}';
         """)
         .command_package
     ,
@@ -70,6 +75,7 @@ bot_commands = {
         CommandPackageBuilder("socials")
         .add_description("Upload socials image/screenshot")
         .add_color(discord.Color.purple())
+        .add_emoji("\U0001F465")
         .add_punishment(-15.0)
         .add_deadline({"day_of_week": "sun", "hour": 23, "minute": 59})
         .add_validator(lambda user: f"""
@@ -81,7 +87,7 @@ bot_commands = {
             FROM streaks
             WHERE date_time BETWEEN (SELECT week_start FROM week_dates) AND (SELECT week_end FROM week_dates)
             AND routine_type = 'socials'
-            AND user_name = '{user}';
+            AND user_id = '{user}';
         """)
         .command_package
     ,
@@ -89,6 +95,7 @@ bot_commands = {
         CommandPackageBuilder("food")
         .add_description("Upload food image/selfie")
         .add_color(discord.Color.red())
+        .add_emoji("\U0001F357")
         .add_punishment(-5.0)
         .add_deadline({"hour": 23, "minute": 59})
         .add_validator(lambda user: f"""
@@ -99,7 +106,7 @@ bot_commands = {
             FROM streaks
             WHERE DATE(date_time) = DATE('now', 'localtime') 
             AND routine_type = 'food'
-            AND user_name = '{user}';
+            AND user_id = '{user}';
         """)
         .command_package
     ,
@@ -107,6 +114,7 @@ bot_commands = {
         CommandPackageBuilder("outside")
         .add_description("Upload image/selfie of you dressed outside")
         .add_color(discord.Color.blue())
+        .add_emoji("\U00002600")
         .add_punishment(-5.0)
         .add_deadline({"hour": 7, "minute": 0})
         .add_validator(lambda user: f"""
@@ -117,7 +125,7 @@ bot_commands = {
             FROM streaks
             WHERE DATE(date_time) = DATE('now', 'localtime') 
             AND routine_type = 'outside'
-            AND user_name = '{user}';
+            AND user_id = '{user}';
         """)
         .command_package
     ,
@@ -125,6 +133,7 @@ bot_commands = {
         CommandPackageBuilder("screentime")
         .add_description("Upload image/screenshot of your <=3 hours screentime")
         .add_color(discord.Color.orange())
+        .add_emoji("\U0000260E")
         .add_punishment(-10.0)
         .add_deadline({"hour": 23, "minute": 59})
         .add_validator(lambda user: f"""
@@ -135,8 +144,10 @@ bot_commands = {
             FROM streaks
             WHERE DATE(date_time) = DATE('now', 'localtime') 
             AND routine_type = 'screentime'
-            AND user_name = '{user}';
+            AND user_id = '{user}';
         """)
         .command_package
     ,
 }
+
+emoji_command_lookup = {command_package.get_member("emoji"): command_package for command_package in bot_commands.values()}

@@ -1,12 +1,12 @@
 import os
 from dotenv import load_dotenv
-from datetime import datetime
 
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-from utils.commands import *
+from utils.views import ViewManager
+from utils.routine_commands import *
 from utils.db import *
 
 
@@ -15,12 +15,14 @@ class DiscordBot(commands.Bot):
         intents = discord.Intents.default()
         intents.reactions = True
         intents.messages = True
+        intents.members = True
 
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
         # Register the slash command tree
         await self.tree.sync()
+
 
 load_dotenv()
 
@@ -41,20 +43,16 @@ async def streak_summary_command(interaction: discord.Interaction, user: discord
     streak_summary = {routine: streak_count for routine, streak_count in streak_summary}
     opted_routines = get_opted_routines(user_id=user_id)
 
-    enum_summary = f"{user.mention}\n**Balance**: {balance}\n\n"
+    description = f"{user.mention}\n**Balance**: {balance}\n\n"
 
     for routine in opted_routines:
         streak_count = streak_summary.get(routine, 0)
-        enum_summary += f"**{routine}**: `{streak_count}`\n"
+        description += f"**{routine}**: `{streak_count}`\n"
 
     # Create and send the embed
-    embed = discord.Embed(
-        title="Current Week's Streak",
-        description=enum_summary,
-        color=color
-    )
+    summary_embed = ViewManager.get_streak_summary_embed(color, description)
     
-    await interaction.followup.send(embed=embed)
+    await interaction.followup.send(embed=summary_embed)
 
 async def validate_streak_deadline(command_package: CommandPackage):
     channel = bot.get_channel(RULES_MESSAGE_ID)
@@ -70,14 +68,9 @@ async def validate_streak_deadline(command_package: CommandPackage):
 
         if flag: description += f"<@{user_id}>\n"
 
-    embed = discord.Embed(
-        title=f"\U0000274C {command_package.command_name.capitalize()} Deadline",
-        description=description,
-        color=discord.Color.blurple(),
-    )
-    embed.set_footer(text="Remember to check your new balance!")
+    deadline_embed = ViewManager.get_deadline_embed(command_package, description)
 
-    await channel.send(embed=embed)
+    await channel.send(embed=deadline_embed)
 
 # Shared handler for processing route commands
 async def routine_command(interaction: discord.Interaction, file: discord.Attachment, command_package: CommandPackage):
@@ -88,11 +81,6 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
         return
     
     user = interaction.user
-
-    command_name = command_package.command_name
-    color = command_package.get_member("color")
-    local_datetime = datetime.now().strftime('%A, %B %d, %Y')
-
     add_streak(user_id=user.id, command_package=command_package)
 
     try:
@@ -100,17 +88,12 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
         await interaction.response.defer()
 
         # Send the embed with the image preview
-        embed = discord.Embed(
-            title=f"\U00002705 {command_name.capitalize()} Proof",
-            description=f"**Date**: {local_datetime}",
-            color=color
-        )
-        embed.set_image(url=file.url)
+        routine_embed = ViewManager.get_routine_sent_embed(command_package=command_package, file=file)
 
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=routine_embed)
 
         # Send streak summary (reusing the helper function)
-        await streak_summary_command(interaction, user, color)
+        await streak_summary_command(interaction, user, command_package.get_member("color"))
 
     except Exception as e:
         await interaction.followup.send(f"An error occurred while processing the `{command_name}` command: {e}", ephemeral=True)
@@ -154,26 +137,9 @@ async def balance_command(interaction: discord.Interaction, user: discord.Member
 
 @bot.tree.command(name="help", description="Displays all available commands")
 async def help_command(interaction: discord.Interaction):
-    embed = discord.Embed(
-        title="Bot Commands",
-        color=discord.Color.yellow()
-    )
-    
-    for command, command_package in bot_commands.items():
-        embed.add_field(
-            name=f"/{command}",
-            value=command_package.get_member("description"),
-            inline=False
-        )
+    help_command_embed = ViewManager.get_help_embed(bot_commands)
 
-    embed.add_field(name=f"/help", value="Displays all available commands", inline=False)
-    embed.add_field(name=f"/streak", value="Shows current streak", inline=False)
-    
-    # Footer and additional details
-    embed.set_footer(text="Use '/' to start typing a command!")
-    
-    # Send the embed
-    await interaction.response.send_message(embed=embed, ephemeral=True)
+    await interaction.response.send_message(embed=help_command_embed, ephemeral=True)
 
 @bot.event
 async def on_ready():
@@ -195,9 +161,7 @@ async def on_ready():
 
     # Register new users to database
     guild = discord.utils.get(bot.guilds, id=SERVER_ID)
-    members = await guild.fetch_members(limit=None).flatten()
-
-    for member in members:
+    async for member in guild.fetch_members(limit=None):
         if not member.bot:
             member_id = str(member.id)
             add_user(member_id)

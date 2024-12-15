@@ -2,7 +2,7 @@ from functools import wraps
 import sqlite3
 import json
 
-from commands import CommandPackage
+from .routine_commands import CommandPackage
 
 SQLITE_DB = "app.db"
 
@@ -88,7 +88,7 @@ def punish_user(cursor, user_id: str, command_package: CommandPackage):
 @db_connection
 def add_user(cursor, user_id: str):
     cursor.execute('''
-        INSERT INTO users (user_id)
+        INSERT OR IGNORE INTO users (user_id)
         VALUES (?);
     ''', (user_id,))
 
@@ -118,7 +118,7 @@ def update_balance(cursor, user_id: str, new_balance: float):
         UPDATE users 
         SET user_balance = ?
         WHERE user_id = ?;
-    ''', (user_id, new_balance))
+    ''', (new_balance, user_id))
 
 @db_connection
 def update_opted_routine(cursor, user_id: str, command_package: CommandPackage):

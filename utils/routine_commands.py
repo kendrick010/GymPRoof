@@ -1,6 +1,7 @@
 from typing import Callable
 import discord
 
+
 class CommandPackage:
     def __init__(self, command_name: str):
         self.command_name = command_name

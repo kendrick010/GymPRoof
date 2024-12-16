@@ -1,5 +1,6 @@
 from datetime import datetime
-import discord
+
+from discord import Color, Attachment, Embed
 
 from .routine_commands import CommandPackage
 
@@ -7,9 +8,9 @@ from .routine_commands import CommandPackage
 class ViewManager:
     @staticmethod
     def get_help_embed(bot_commands: dict):
-        embed = discord.Embed(
+        embed = Embed(
             title="Bot Commands",
-            color=discord.Color.yellow()
+            color=Color.yellow()
         )
         for command, command_package in bot_commands.items():
             embed.add_field(
@@ -24,12 +25,12 @@ class ViewManager:
         return embed
     
     @staticmethod
-    def get_routine_sent_embed(command_package: CommandPackage, file: discord.Attachment):
+    def get_routine_sent_embed(command_package: CommandPackage, file: Attachment):
         command_name = command_package.command_name
         command_color = command_package.get_member("color")
         local_datetime = datetime.now().strftime('%A, %B %d, %Y')
 
-        embed = discord.Embed(
+        embed = Embed(
             title=f"\U00002705 {command_name.capitalize()} Proof",
             description=f"**Date**: {local_datetime}",
             color=command_color
@@ -39,8 +40,8 @@ class ViewManager:
         return embed
 
     @staticmethod
-    def get_streak_summary_embed(color: discord.Color, description: str):
-        embed = discord.Embed(
+    def get_streak_summary_embed(color: Color, description: str):
+        embed = Embed(
             title="Current Week's Streak",
             description=description,
             color=color
@@ -53,7 +54,7 @@ class ViewManager:
         command_name = command_package.command_name
         command_color = command_package.get_member("color")
 
-        embed = discord.Embed(
+        embed = Embed(
             title=f"\U0000274C {command_name.capitalize()} Deadline",
             description=description,
             color=command_color,

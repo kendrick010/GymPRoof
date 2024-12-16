@@ -1,13 +1,25 @@
-import os
-from dotenv import load_dotenv
+from typing import Callable
 
+import discord
 from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from utils.routine_commands import CommandPackage, bot_commands, emoji_command_lookup
 from utils.views import ViewManager
-from utils.routine_commands import *
-from utils.db import *
+from utils.config import DiscordConfig
+from utils.db import (
+    add_streak,
+    summarize_streak,
+    punish_user,
+    add_user,
+    get_balance,
+    update_balance,
+    update_opted_routine,
+    drop_opted_routine,
+    get_opted_routines,
+    get_opted_users
+)
 
 
 class DiscordBot(commands.Bot):
@@ -23,14 +35,6 @@ class DiscordBot(commands.Bot):
         # Register the slash command tree
         await self.tree.sync()
 
-
-load_dotenv()
-
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-SERVER_ID = int(os.environ.get('SERVER_ID'))
-RULES_CHANNEL = int(os.environ.get('RULES_CHANNEL'))
-BOT_CHANNEL = int(os.environ.get('BOT_CHANNEL'))
-RULES_MESSAGE_ID = int(os.environ.get('RULES_MESSAGE_ID'))
 
 scheduler = AsyncIOScheduler()
 bot = DiscordBot()
@@ -55,7 +59,7 @@ async def streak_summary_command(interaction: discord.Interaction, user: discord
     await interaction.followup.send(embed=summary_embed)
 
 async def validate_streak_deadline(command_package: CommandPackage):
-    channel = bot.get_channel(RULES_MESSAGE_ID)
+    channel = bot.get_channel(DiscordConfig.bot_channel_id)
 
     # Punish users who have not completed routine deadline
     opted_users = get_opted_users(command_package=command_package)
@@ -99,7 +103,7 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
         await interaction.followup.send(f"An error occurred while processing the `{command_name}` command: {e}", ephemeral=True)
 
 async def routine_opt(payload: discord.RawReactionActionEvent, updater: Callable[[str, str], None]):
-    if payload.channel_id != RULES_CHANNEL or payload.message_id != RULES_MESSAGE_ID:
+    if payload.channel_id != DiscordConfig.rules_channel_id or payload.message_id != DiscordConfig.rules_message_id:
         return
 
     emoji = str(payload.emoji)
@@ -160,7 +164,7 @@ async def on_ready():
     scheduler.start()
 
     # Register new users to database
-    guild = discord.utils.get(bot.guilds, id=SERVER_ID)
+    guild = discord.utils.get(bot.guilds, id=DiscordConfig.server_id)
     async for member in guild.fetch_members(limit=None):
         if not member.bot:
             member_id = str(member.id)
@@ -175,5 +179,4 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     await routine_opt(payload=payload, updater=drop_opted_routine)
 
 # Run the bot
-db_init()
-bot.run(BOT_TOKEN)
+bot.run(DiscordConfig.bot_token)

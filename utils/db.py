@@ -1,185 +1,103 @@
-from functools import wraps
-import sqlite3
-import json
+from supabase import create_client
 
-from .routine_commands import CommandPackage
+from .routine_commands import CommandPackage, bot_commands
+from .config import SupabaseConfig
 
-SQLITE_DB = "app.db"
+# Initialize the Supabase client
+supabase_client = create_client(SupabaseConfig.url, SupabaseConfig.api_key)
 
-def db_connection(func):
-    # Database connection decorator
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        connection = sqlite3.connect(SQLITE_DB)
-        cursor = connection.cursor()
+def add_streak(user_id: str, command_package: CommandPackage):
+    data = {
+        "user_id": user_id,
+        "routine_type": command_package.command_name
+    }
 
-        try:
-            result = func(cursor, *args, **kwargs)
-            connection.commit()
+    supabase_client.table("streaks").insert(data).execute()
 
-        finally:
-            connection.close()
+def summarize_streak(user_id: str):
+    columns = [routine + "days" for routine in bot_commands.keys()]
+    response = supabase_client.table("streak_view").select(*columns).filter('user_id', 'eq', user_id).limit(1).execute()
 
-        return result
-    
-    return wrapper
+    return response.data[0]
 
-@db_connection
-def db_init(cursor):
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS streaks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            routine_type TEXT NOT NULL,
-            date_time DATETIME NOT NULL
-        )
-    ''')
-
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            user_balance REAL DEFAULT 0.0,
-            opted_routines TEXT DEFAULT '[]'
-        )
-    ''')
-
-@db_connection
-def add_streak(cursor, user_id: str, command_package: CommandPackage):
-    routine_type = command_package.command_name
-
-    cursor.execute('''
-        INSERT INTO streaks (user_id, routine_type, date_time)
-        VALUES (?, ?, DATETIME('now', 'localtime'))
-    ''', (user_id, routine_type))
-
-@db_connection
-def summarize_streak(cursor, user_id: str):
-    cursor.execute(f'''
-        SELECT routine_type, COUNT(DISTINCT DATE(date_time)) AS unique_date_count
-        FROM streaks
-        WHERE strftime('%Y-%W', date_time) = strftime('%Y-%W', 'now', 'localtime')
-        AND user_id = ?
-        GROUP BY routine_type
-    ''', (user_id,))
-
-    return cursor.fetchall()
-
-@db_connection
-def punish_user(cursor, user_id: str, command_package: CommandPackage):
+def punish_user(user_id: str, command_package: CommandPackage):
     punishment_amount = command_package.get_member("punishment")
-    validator_builder = command_package.get_member("validator")
-    query = validator_builder(user_id)
+    query_callable = command_package.get_member("query")
+    query = query_callable(user_id)
 
     # Execute validation query
-    cursor.execute(query)
-    records = cursor.fetchone()[0]
+    response = query.execute()
 
-    if not records:
-        cursor.execute('''
-            UPDATE users
-            SET user_balance = user_balance + ?
-            WHERE user_id = ?;
-        ''', (punishment_amount, user_id))
+    if not response.data:
+        data = {
+            "user_balance": f"(user_balance + {punishment_amount})"
+        }
+        supabase_client.table("users").update(data).filter('user_id', 'eq', user_id).execute()
 
         return True
 
     return False
 
-@db_connection
-def add_user(cursor, user_id: str):
-    cursor.execute('''
-        INSERT OR IGNORE INTO users (user_id)
-        VALUES (?);
-    ''', (user_id,))
+def add_user(user_id: str):
+    data = {
+        "user_id": user_id
+    }
 
-@db_connection
-def get_users(cursor):
-    cursor.execute('''
-        SELECT DISTINCT user_id FROM users;
-    ''')
+    supabase_client.table('users').upsert(data, on_conflict=["user_id"]).execute()
 
-    users = [user[0] for user in cursor.fetchall()]
+def get_users():
+    response = supabase_client.table('users').select('user_id').execute()
     
-    return users
+    return response.data
 
-@db_connection
-def get_balance(cursor, user_id: str):
-    cursor.execute('''
-        SELECT user_balance FROM users WHERE user_id = ?;
-    ''', (user_id,))
+def get_balance(user_id: str):
+    response = supabase_client.table('users').select('user_balance').filter('user_id', 'eq', user_id).limit(1).execute()
 
-    user_balance = cursor.fetchone()[0]
+    return response.data[0]
 
-    return user_balance
+def update_balance(user_id: str, new_balance: float):
+    data = {
+        "user_balance": new_balance
+    }
 
-@db_connection
-def update_balance(cursor, user_id: str, new_balance: float):
-    cursor.execute('''
-        UPDATE users 
-        SET user_balance = ?
-        WHERE user_id = ?;
-    ''', (new_balance, user_id))
+    supabase_client.table("users").update(data).filter('user_id', 'eq', user_id).execute()
 
-@db_connection
-def update_opted_routine(cursor, user_id: str, command_package: CommandPackage):
-    cursor.execute('''
-        SELECT opted_routines FROM users WHERE user_id = ?;
-    ''', (user_id,))
-
-    queried_routines = cursor.fetchone()[0]
+def update_opted_routine(user_id: str, command_package: CommandPackage):
+    queried_routines = get_opted_routines(user_id=user_id)
 
     # Enforce uniqueness
-    opted_routines = json.loads(queried_routines)
-    opted_routines = set(opted_routines)
-    opted_routines.add(command_package.command_name)
-    opted_routines = list(opted_routines)
+    queried_routines = set(queried_routines)
+    queried_routines.add(command_package.command_name)
+    queried_routines = list(queried_routines)
 
-    cursor.execute('''
-        UPDATE users
-        SET opted_routines = ?
-        WHERE user_id = ?;
-    ''', (json.dumps(opted_routines), user_id))
+    data = {
+        "opted_routines": queried_routines
+    }
 
-@db_connection
-def drop_opted_routine(cursor, user_id: str, command_package: CommandPackage):
-    cursor.execute('''
-        SELECT opted_routines FROM users WHERE user_id = ?;
-    ''', (user_id,))
+    supabase_client.table("users").update(data).filter('user_id', 'eq', user_id).execute()
 
-    queried_routines = cursor.fetchone()[0]
+def drop_opted_routine(user_id: str, command_package: CommandPackage):
+    queried_routines = get_opted_routines(user_id=user_id)
 
     # Enforce uniqueness
-    opted_routines = json.loads(queried_routines)
-    opted_routines = set(opted_routines)
-    opted_routines.discard(command_package.command_name)
-    opted_routines = list(opted_routines)
+    queried_routines = set(queried_routines)
+    queried_routines.discard(command_package.command_name)
+    queried_routines = list(queried_routines)
 
-    cursor.execute('''
-        UPDATE users
-        SET opted_routines = ?
-        WHERE user_id = ?;
-    ''', (json.dumps(opted_routines), user_id))
+    data = {
+        "opted_routines": queried_routines
+    }
 
-@db_connection
-def get_opted_routines(cursor, user_id: str):
-    cursor.execute('''
-        SELECT opted_routines FROM users
-        WHERE user_id = ?;
-    ''', (user_id,))
+    supabase_client.table("users").update(data).filter('user_id', 'eq', user_id).execute()
 
-    queried_routines = cursor.fetchone()[0]
-    opted_routines = json.loads(queried_routines)
-    
-    return opted_routines
+def get_opted_routines(user_id: str):
+    response = supabase_client.table("users").select("opted_routines").filter('user_id', 'eq', user_id).limit(1).execute()
+    queried_routines = response.data[0]["opted_routines"]
 
-@db_connection
-def get_opted_users(cursor, command_package: CommandPackage):
+    return queried_routines
+
+def get_opted_users(command_package: CommandPackage):
     routine_type = command_package.command_name
-
-    cursor.execute('''
-        SELECT user_id FROM users WHERE opted_routines LIKE ?";
-    ''', (routine_type,))
-
-    users = [user[0] for user in cursor.fetchall()]
+    response = supabase_client.table("users").select("user_id").filter("opted_routines", "@>", f'["{routine_type}"]').execute()
     
-    return users
+    return response.data

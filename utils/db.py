@@ -4,7 +4,8 @@ from .routine_commands import CommandPackage, bot_commands
 from .config import SupabaseConfig
 
 # Initialize the Supabase client
-supabase_client = create_client(SupabaseConfig.url, SupabaseConfig.api_key)
+supabase_config = SupabaseConfig()
+supabase_client = create_client(supabase_config.url, supabase_config.api_key)
 
 def add_streak(user_id: str, command_package: CommandPackage):
     data = {
@@ -15,10 +16,12 @@ def add_streak(user_id: str, command_package: CommandPackage):
     supabase_client.table("streaks").insert(data).execute()
 
 def summarize_streak(user_id: str):
-    columns = [routine + "days" for routine in bot_commands.keys()]
+    columns = [f"{routine}_days" for routine in bot_commands.keys()]
     response = supabase_client.table("streak_view").select(*columns).filter('user_id', 'eq', user_id).limit(1).execute()
 
-    return response.data[0]
+    summary = response.data[0] if response.data else dict()
+
+    return summary
 
 def punish_user(user_id: str, command_package: CommandPackage):
     punishment_amount = command_package.get_member("punishment")
@@ -27,8 +30,9 @@ def punish_user(user_id: str, command_package: CommandPackage):
 
     # Execute validation query
     response = query.execute()
+    complete_status = response.data.values()[0]
 
-    if not response.data:
+    if not complete_status:
         data = {
             "user_balance": f"(user_balance + {punishment_amount})"
         }

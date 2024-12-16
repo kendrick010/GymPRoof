@@ -35,22 +35,22 @@ class DiscordBot(commands.Bot):
         # Register the slash command tree
         await self.tree.sync()
 
-
+discord_config = DiscordConfig()
 scheduler = AsyncIOScheduler()
 bot = DiscordBot()
 
 async def streak_summary_command(interaction: discord.Interaction, user: discord.User, color: discord.Color):
     user_id = str(user.id)
 
-    balance = get_balance(user_id=user_id)
+    balance = get_balance(user_id=user_id).get("user_balance")
     streak_summary = summarize_streak(user_id=user_id)
-    streak_summary = {routine: streak_count for routine, streak_count in streak_summary}
     opted_routines = get_opted_routines(user_id=user_id)
 
-    description = f"{user.mention}\n**Balance**: {balance}\n\n"
+    description = f"{user.mention}\n**Balance**: {float(balance):.2f}\n\n"
 
     for routine in opted_routines:
-        streak_count = streak_summary.get(routine, 0)
+        column_key = f"{routine}_days"
+        streak_count = streak_summary.get(column_key, 0)
         description += f"**{routine}**: `{streak_count}`\n"
 
     # Create and send the embed
@@ -59,7 +59,7 @@ async def streak_summary_command(interaction: discord.Interaction, user: discord
     await interaction.followup.send(embed=summary_embed)
 
 async def validate_streak_deadline(command_package: CommandPackage):
-    channel = bot.get_channel(DiscordConfig.bot_channel_id)
+    channel = bot.get_channel(discord_config.bot_channel_id)
 
     # Punish users who have not completed routine deadline
     opted_users = get_opted_users(command_package=command_package)
@@ -67,7 +67,8 @@ async def validate_streak_deadline(command_package: CommandPackage):
 
     if not opted_users: return
     
-    for user_id in opted_users:
+    for user in opted_users:
+        user_id = user.get("user_id")
         flag = punish_user(user_id=user_id, command_package=command_package)
 
         if flag: description += f"<@{user_id}>\n"
@@ -103,7 +104,7 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
         await interaction.followup.send(f"An error occurred while processing the `{command_name}` command: {e}", ephemeral=True)
 
 async def routine_opt(payload: discord.RawReactionActionEvent, updater: Callable[[str, str], None]):
-    if payload.channel_id != DiscordConfig.rules_channel_id or payload.message_id != DiscordConfig.rules_message_id:
+    if payload.channel_id != discord_config.rules_channel_id or payload.message_id != discord_config.rules_message_id:
         return
 
     emoji = str(payload.emoji)
@@ -126,6 +127,8 @@ for command_name, command_package in bot_commands.items():
 
 @bot.tree.command(name="streak", description="Shows current streak")
 async def streak_command(interaction: discord.Interaction, user: discord.Member):
+    if user.bot: return
+
     await interaction.response.defer()
     
     # Send the streak summary for the user
@@ -164,7 +167,7 @@ async def on_ready():
     scheduler.start()
 
     # Register new users to database
-    guild = discord.utils.get(bot.guilds, id=DiscordConfig.server_id)
+    guild = discord.utils.get(bot.guilds, id=discord_config.server_id)
     async for member in guild.fetch_members(limit=None):
         if not member.bot:
             member_id = str(member.id)
@@ -179,4 +182,4 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     await routine_opt(payload=payload, updater=drop_opted_routine)
 
 # Run the bot
-bot.run(DiscordConfig.bot_token)
+bot.run(discord_config.bot_token)

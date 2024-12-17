@@ -28,7 +28,7 @@ def summarize_streak(user_id: str):
 def punish_user(user_id: str, command_package: CommandPackage):
     punishment_amount = command_package.get_member("punishment")
     query_callable = command_package.get_member("query")
-    query = query_callable(user_id)
+    query = query_callable(supabase_client, user_id)
 
     # Execute validation query
     response = query.execute()

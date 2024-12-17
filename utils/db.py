@@ -1,3 +1,5 @@
+import json
+
 from supabase import create_client
 
 from .routine_commands import CommandPackage, bot_commands
@@ -33,10 +35,10 @@ def punish_user(user_id: str, command_package: CommandPackage):
     complete_status = response.data.values()[0]
 
     if not complete_status:
-        data = {
-            "user_balance": f"(user_balance + {punishment_amount})"
-        }
-        supabase_client.table("users").update(data).filter('user_id', 'eq', user_id).execute()
+        response = supabase_client.rpc("increment_user_balance", {
+            "target_user_id": user_id,
+            "increment_value": punishment_amount
+        }).execute()
 
         return True
 
@@ -102,6 +104,8 @@ def get_opted_routines(user_id: str):
 
 def get_opted_users(command_package: CommandPackage):
     routine_type = command_package.command_name
-    response = supabase_client.table("users").select("user_id").filter("opted_routines", "@>", f'["{routine_type}"]').execute()
+    routine_type = json.dumps([routine_type])
+    
+    response = supabase_client.table("users").select("user_id").contains("opted_routines", routine_type).execute()
     
     return response.data

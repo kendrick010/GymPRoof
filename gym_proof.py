@@ -103,7 +103,7 @@ async def routine_command(interaction: discord.Interaction, file: discord.Attach
     except Exception as e:
         await interaction.followup.send(f"An error occurred while processing the `{command_name}` command: {e}", ephemeral=True)
 
-async def routine_opt(payload: discord.RawReactionActionEvent, updater: Callable[[str, str], None]):
+async def routine_opt(payload: discord.RawReactionActionEvent, updater: Callable[[str, CommandPackage], None]):
     if payload.channel_id != discord_config.rules_channel_id or payload.message_id != discord_config.rules_message_id:
         return
 

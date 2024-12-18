@@ -32,7 +32,7 @@ def punish_user(user_id: str, command_package: CommandPackage):
 
     # Execute validation query
     response = query.execute()
-    complete_status = response.data.values()[0]
+    complete_status = response.data[0]
 
     if not complete_status:
         response = supabase_client.rpc("increment_user_balance", {

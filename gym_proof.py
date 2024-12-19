@@ -162,6 +162,7 @@ async def on_ready():
                 validate_streak_deadline,
                 cron_trigger,
                 args=[command_package],
+                misfire_grace_time=60,
             )
     
     scheduler.start()

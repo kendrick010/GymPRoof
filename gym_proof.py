@@ -174,6 +174,8 @@ async def on_ready():
             member_id = str(member.id)
             add_user(member_id)
 
+    print("Schedulers and db setup complete")
+
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     await routine_opt(payload=payload, updater=update_opted_routine)

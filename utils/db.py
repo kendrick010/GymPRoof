@@ -26,6 +26,7 @@ def summarize_streak(user_id: str):
     return summary
 
 def punish_user(user_id: str, command_package: CommandPackage):
+    routine_type = command_package.command_name
     punishment_amount = command_package.get_member("punishment")
     query_callable = command_package.get_member("query")
     query = query_callable(supabase_client, user_id)
@@ -33,6 +34,7 @@ def punish_user(user_id: str, command_package: CommandPackage):
     # Execute validation query
     response = query.execute()
     complete_status = response.data[0]
+    complete_status = complete_status.get(f"{routine_type}_complete")
 
     if not complete_status:
         response = supabase_client.rpc("increment_user_balance", {
